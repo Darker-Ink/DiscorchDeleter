@@ -3,7 +3,7 @@ name: Release Script
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'tampermonkey.config.json'
 
