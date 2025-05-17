@@ -1,0 +1,89 @@
+name: Release Script
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tampermonkey.config.json'
+
+jobs:
+  check-version-change:
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.check-version.outputs.version_changed }}
+      new_version: ${{ steps.check-version.outputs.new_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Check for version change in tampermonkey.config.json
+        id: check-version
+        run: |
+          # Get the current version from tampermonkey.config.json
+          CURRENT_VERSION=$(jq -r '.version' tampermonkey.config.json)
+          echo "Current version is $CURRENT_VERSION"
+          
+          # Get previous tampermonkey.config.json content
+          git show HEAD~1:tampermonkey.config.json > previous_config.json || echo "Previous file not found"
+          
+          if [ -f previous_config.json ]; then
+            PREVIOUS_VERSION=$(jq -r '.version' previous_config.json)
+            echo "Previous version was $PREVIOUS_VERSION"
+            
+            if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+              echo "Version changed from $PREVIOUS_VERSION to $CURRENT_VERSION"
+            else
+              echo "version_changed=false" >> $GITHUB_OUTPUT
+              echo "Version unchanged"
+            fi
+          else
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "First release or previous file not found"
+          fi
+
+  build-and-release:
+    needs: check-version-change
+    if: needs.check-version-change.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build script
+        run: npm run build
+
+      - name: Get script name
+        id: script-name
+        run: |
+          SCRIPT_NAME=$(ls dist/*.user.js | head -n1)
+          echo "script_path=$SCRIPT_NAME" >> $GITHUB_OUTPUT
+          echo "script_filename=$(basename $SCRIPT_NAME)" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.check-version-change.outputs.new_version }}
+          name: Release v${{ needs.check-version-change.outputs.new_version }}
+          body: |
+            Release of version ${{ needs.check-version-change.outputs.new_version }}
+          files: ${{ steps.script-name.outputs.script_path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

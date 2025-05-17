@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ESNext", "DOM"],
+    "types": ["node", "tampermonkey"]
+  },
+  "include": ["src/**/*.ts", "src/types/tampermonkey.d.ts"],
+  "exclude": ["node_modules"]
+} 

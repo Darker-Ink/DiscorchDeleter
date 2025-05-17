@@ -1,0 +1,21 @@
+{
+  "name": "DiscorchDeleter",
+  "namespace": "https://discord.com/",
+  "version": "0.9.0",
+  "description": "A script to delete all messages provided from Discorch",
+  "author": "DarkerInk",
+  "match": [
+    "https://discord.com/channels*",
+    "https://ptb.discord.com/channels*",
+    "https://canary.discord.com/channels*"
+  ],
+  "grant": [
+    "GM_addStyle",
+    "GM_getValue",
+    "GM_setValue",
+    "GM_deleteValue",
+    "unsafeWindow"
+  ],
+  "require": [],
+  "run-at": "document-idle"
+} 

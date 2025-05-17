@@ -1,0 +1,124 @@
+<div id="deleter-ui">
+
+    <div id="ui-header">
+        <div class="header-left">
+            <svg class="header-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61.22l2-3.46c.12-.22-.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" />
+            </svg>
+            <h1>DiscorchDeleter</h1>
+        </div>
+        <button id="minimizeButton" title="Minimize/Expand" class="icon-button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 13H5v-2h14v2z" />
+            </svg>
+        </button>
+    </div>
+
+
+    <div id="ui-banner" class="banner info-banner" style="display: none;">
+        <span class="banner-text">This is an informational banner!</span>
+        <button class="banner-close" aria-label="Close banner">&times;</button>
+    </div>
+
+    <div class="ui-content-wrapper">
+        <p class="ui-description">
+            TODO: Add description here.
+        </p>
+
+        <div class="section">
+            <h2 class="section-title">INPUT SOURCE</h2>
+            <div class="input-method-toggle-group">
+                <button id="showFileUploadButton" class="input-method-toggle-button active">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 6px;">
+                        <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
+                    </svg>
+                    Upload File
+                </button>
+                <button id="showJsonPasteButton" class="input-method-toggle-button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 6px;">
+                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                    </svg>
+                    Paste JSON
+                </button>
+            </div>
+
+            <div id="fileInputSection" class="input-section">
+                <div class="input-group file-input-area">
+                    <label for="jsonFile" class="input-label sr-only">Upload JSON File</label>
+                    <div class="file-input-controls" style="text-align: center;">
+                        <button id="customFileButton" class="button-secondary">
+                            Choose File
+                        </button>
+                        <input type="file" id="jsonFile" accept=".json" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div id="pasteInputSection" class="input-section" style="display: none;">
+                <div class="input-group">
+                    <label for="jsonPaste" class="input-label sr-only">Paste JSON Content</label>
+                    <textarea id="jsonPaste" rows="6" placeholder="Paste JSON data from messages/index.json here..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="section configuration-section">
+            <h2 class="section-title">CONFIGURATION</h2>
+            <div class="input-group">
+                <label for="deleteInterval" class="input-label">Delete Interval (ms)</label>
+                <input type="number" id="deleteInterval" value="1500" step="50" min="750" max="600000">
+                <p id="intervalHelper" class="helper-text">Min: 750ms, Max: 600,000ms (10 min). Recommended: 1000-2500ms.</p>
+                <div id="intervalWarning" class="warning-text" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">CONTROLS</h2>
+            <div class="button-group main-controls">
+                <button id="startButton" class="button-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z" />
+                    </svg>
+                    Start
+                </button>
+                <button id="stopButton" class="button-danger">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h12v12H6z" />
+                    </svg>
+                    Stop
+                </button>
+                <button id="clearDataButton" class="button-secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                    </svg>
+                    Clear Data
+                </button>
+            </div>
+        </div>
+
+        <div class="section status-section">
+            <h2 class="section-title">STATUS</h2>
+            <div id="importSummaryOutput" class="status-output-text" style="margin-bottom: 10px;"></div>
+            <div id="statusOutput" class="status-output-text">Idle. Ready to begin.</div>
+            <div class="progress-bar-container" id="progressBarContainer" style="display: none;">
+                <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+            <div id="etaDisplay" class="helper-text" style="display: none;"></div>
+        </div>
+
+        <div id="logContainer" class="section log-section" style="display: none;">
+            <h2 class="section-title log-title">
+                LOGS
+            </h2>
+            <pre id="logOutput" class="log-content" style="display: none;"></pre>
+        </div>
+    </div>
+
+    <div id="ui-footer" class="ui-content-wrapper">
+        <div class="footer-links">
+            <a href="https://github.com/Darker-Ink/DiscorchDeleter" class="footer-link" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/Darker-Ink/DiscorchDeleter/issues" class="footer-link" target="_blank" rel="noopener noreferrer">Report Issue</a>
+        </div>
+        <div class="footer-version" id="footerVersion">vUNKNOWN</div>
+    </div>
+</div>

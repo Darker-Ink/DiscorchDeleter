@@ -1,0 +1,27 @@
+{
+  "name": "discorch-deleter",
+  "version": "1.1.0",
+  "description": "A script to delete all messages provided from Discorch",
+  "main": "dist/script.user.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "keywords": [
+    "tampermonkey",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discorch-deleter": "file:",
+    "tampermonkey-typescript-project": "file:"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "@types/tampermonkey": "^5.0.4",
+    "esbuild": "^0.25.4",
+    "typescript": "^5.8.3"
+  }
+}
