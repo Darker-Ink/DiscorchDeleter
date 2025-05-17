@@ -1,4 +1,4 @@
-import type { ChannelStoreType, PermissionStoreType } from "./vencord/types.js";
+import type { ChannelStoreType, PermissionStoreType, RestAPIType } from "./vencord/types.js";
 
 interface Vencord {
     Webpack: {
@@ -6,6 +6,7 @@ interface Vencord {
         Common: {
             PermissionStore: PermissionStoreType;
             ChannelStore: ChannelStoreType;
+            RestAPI: RestAPIType;
         }
     };
 }

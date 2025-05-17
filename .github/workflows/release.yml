@@ -55,6 +55,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -79,6 +81,25 @@ jobs:
           echo "script_path=$SCRIPT_PATH" >> $GITHUB_OUTPUT
           echo "script_filename=$(basename $SCRIPT_PATH)" >> $GITHUB_OUTPUT
           echo "Found script: $SCRIPT_PATH"
+          
+      - name: Get commit history
+        id: get-commits
+        run: |
+          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          
+          echo "Previous tag: ${PREVIOUS_TAG:-none}"
+          
+          if [ -n "$PREVIOUS_TAG" ]; then
+            COMMIT_LOG=$(git log --pretty=format:"@%an [%h](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H): %s" ${PREVIOUS_TAG}..HEAD)
+          else
+            COMMIT_LOG=$(git log --pretty=format:"@%an [%h](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H): %s" -n 10)
+          fi
+          
+          COMMIT_LOG="${COMMIT_LOG//'%'/'%25'}"
+          COMMIT_LOG="${COMMIT_LOG//$'\n'/'%0A'}"
+          COMMIT_LOG="${COMMIT_LOG//$'\r'/'%0D'}"
+          
+          echo "commit_log=$COMMIT_LOG" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
@@ -87,7 +108,20 @@ jobs:
           tag_name: v${{ needs.check-version-change.outputs.new_version }}
           name: Release v${{ needs.check-version-change.outputs.new_version }}
           body: |
-            Release of version ${{ needs.check-version-change.outputs.new_version }}
+            # Release v${{ needs.check-version-change.outputs.new_version }}
+            
+            **Installation**
+            1. Install [Tampermonkey](https://www.tampermonkey.net/) extension for your browser
+            2. Install [Vencord](https://vencord.dev/download/)'s tampermonkey script
+            3. Click the "discorchdeleter.user.js" file below to install this script
+            
+            **What's Changed**
+            
+            <details>
+              <summary>Changes since last release</summary>
+              
+              ${{ steps.get-commits.outputs.commit_log }}
+            </details>
           files: ${{ steps.script-name.outputs.script_path }}
           draft: false
           prerelease: false

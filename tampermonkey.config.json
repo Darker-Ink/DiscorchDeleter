@@ -1,7 +1,7 @@
 {
   "name": "DiscorchDeleter",
   "namespace": "https://discord.com/",
-  "version": "0.9.3",
+  "version": "1.0.0",
   "description": "A script to delete all messages provided from Discorch",
   "author": "DarkerInk",
   "match": [

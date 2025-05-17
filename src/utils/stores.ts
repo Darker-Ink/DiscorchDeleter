@@ -1,6 +1,9 @@
 import { ChannelMap } from "../types/misc.js";
 import { addLogEntry, updateStatus } from "../ui-logic.js";
+import { RestAPI } from "../vencord/stores.js";
+import { RestAPIResponse } from "../vencord/types.js";
 import { formatTime } from "./formatTime.js";
+import safePromise from "./safePromise.js";
 import { wait } from "./waiter.js";
 
 export const MINIMIZED_STATE_KEY = "discorchDeleterMinimized";
@@ -25,6 +28,13 @@ export interface DeletionStats {
     deletedByChannelType: {
         [channelType: string]: number;
     };
+}
+
+/**
+ * Interface for storing deleted message IDs to prevent re-deletion
+ */
+export interface DeletedMessages {
+    messageIds: string[];
 }
 
 export class AppSettingsStore {
@@ -99,6 +109,29 @@ export class AppSettingsStore {
         stats.totalDeleted += 1;
         stats.deletedByChannelType[channelType] = (stats.deletedByChannelType[channelType] || 0) + 1;
         this.setDeletionStats(stats);
+    }
+
+    public getDeletedMessages(): DeletedMessages {
+        return this.getValue<DeletedMessages>(DELETEION_PROGRESS_KEY, {
+            messageIds: []
+        });
+    }
+
+    public setDeletedMessages(messages: DeletedMessages): void {
+        this.setValue(DELETEION_PROGRESS_KEY, messages);
+    }
+
+    public markMessageAsDeleted(messageId: string): void {
+        const deletedMessages = this.getDeletedMessages();
+        if (!deletedMessages.messageIds.includes(messageId)) {
+            deletedMessages.messageIds.push(messageId);
+            this.setDeletedMessages(deletedMessages);
+        }
+    }
+
+    public isMessageDeleted(messageId: string): boolean {
+        const deletedMessages = this.getDeletedMessages();
+        return deletedMessages.messageIds.includes(messageId);
     }
 
     public clearAllKeys(): void {
@@ -190,6 +223,52 @@ export class DeletionStore {
         return this.isRunning;
     }
 
+    private async deleteMessage(channelId: string, messageId: string): Promise<boolean> {
+        const [, err] = await safePromise(RestAPI.del(`/channels/${channelId}/messages/${messageId}`)) as unknown as [void, RestAPIResponse]
+
+        if (err) {
+            switch (err.status) {
+                case 404: {
+                    addLogEntry(`Message ${messageId} not found, likely already deleted`, "ERROR", err.body);
+                    
+                    AppSettingsStore.instance.markMessageAsDeleted(messageId);
+                    
+                    return false;
+                }
+
+                case 403: {
+                    addLogEntry(`Message ${messageId} is not deletable`, "ERROR", err.body);
+
+                    // Mark it as deleted as we don't got permission to delete it, and don't want to keep trying again
+                    // If we stop and restart the script
+                    AppSettingsStore.instance.markMessageAsDeleted(messageId); 
+                    
+                    return false;
+                }
+
+                case 429: {
+                    addLogEntry(`Rate limited while deleting message ${messageId}`, "ERROR", err.body);
+
+                    await wait((err.body as { retry_after: number }).retry_after * 1000);
+
+                    return await this.deleteMessage(channelId, messageId);
+                }
+
+                default: {
+                    addLogEntry(`Failed to delete message ${messageId}`, "ERROR", err.body);
+                    
+                    return false;
+                }
+            }
+        } else {
+            addLogEntry(`Deleted message ${messageId}`, "INFO");
+            
+            AppSettingsStore.instance.markMessageAsDeleted(messageId);
+            
+            return true;
+        }
+    }
+
     /**
      * Starts the deletion process
      * @param map - The map of channels to delete messages from
@@ -199,7 +278,6 @@ export class DeletionStore {
             addLogEntry("Deletion process is already running", "WARN");
             return;
         }
-        
         
         this.isRunning = true;
 
@@ -216,44 +294,82 @@ export class DeletionStore {
             .filter(([id]) => permissions[id])
             .flatMap(([_, channel]) => channel.messageIds);
 
+        const messageToChannelMap = Object.entries(map).reduce((acc, [channelId, channel]) => {
+            channel.messageIds.forEach(messageId => {
+                acc[messageId] = channelId;
+            });
+            return acc;
+        }, {} as Record<string, string>);
         
         const workingMap = JSON.parse(JSON.stringify(map)) as ChannelMap;
-
-        
+        const alreadyDeletedMessageIds = new Set(messageIds.filter(id => AppSettingsStore.instance.isMessageDeleted(id)));
+        const messagesToProcess = messageIds.filter(id => !alreadyDeletedMessageIds.has(id));
+        const alreadyDeletedCount = alreadyDeletedMessageIds.size;
+        const remainingToDeleteCount = messagesToProcess.length;
         const stats = AppSettingsStore.instance.getDeletionStats();
         
-        addLogEntry(`Deleting ${messageIds.length} messages`, "INFO");
-        addLogEntry(`${stats.totalDeleted} messages deleted in previous sessions`, "INFO");
+        addLogEntry(`Found ${messageIds.length} messages total`, "INFO");
+        
+        if (alreadyDeletedCount > 0) {
+            addLogEntry(`${alreadyDeletedCount} messages already deleted in previous sessions (skipping)`, "INFO");
+        }
+        
+        addLogEntry(`${remainingToDeleteCount} messages will be processed for deletion`, "INFO");
+        addLogEntry(`${stats.totalDeleted} messages deleted overall in previous sessions`, "INFO");
 
-        updateStatus("Deleting messages...", 0, `ETA: ${formatTime(messageIds.length * AppSettingsStore.instance.getInterval())}`);
+        const etaTime = remainingToDeleteCount * AppSettingsStore.instance.getInterval();
 
-        for (let i = 0; i < messageIds.length && this.isRunning; i++) {
-            const messageId = messageIds[i];
-            await wait(250); // todo: actually attempt to delete the message, and handle errors & ratelimiting
+        updateStatus("Deleting messages...", 0, `${formatTime(etaTime)} remaining`);
 
-            addLogEntry(`Deleted message ${messageId}`, "INFO");
-
-            const removed = this.removeMessageFromMap(workingMap, messageId);
+        let completedCount = 0;
+        let skippedCount = alreadyDeletedCount;
+        let processedCount = 0;
+        
+        for (const messageId of messagesToProcess) {
+            if (!this.isRunning) break;
             
-            if (removed) {
-                AppSettingsStore.instance.updateDeletionStats(removed.channelType);
+            const channelId = messageToChannelMap[messageId];
+            
+            processedCount++;
+
+            if (AppSettingsStore.instance.isMessageDeleted(messageId)) {
+                skippedCount++;
+                
+                continue;
             }
 
-            const remainingMessages = messageIds.length - (i + 1);
-            const progress = (i + 1) / messageIds.length;
+            const wasDeleted = await this.deleteMessage(channelId, messageId);
+
+            if (wasDeleted) {
+                completedCount++;
+                
+                const removed = this.removeMessageFromMap(workingMap, messageId);
+                
+                if (removed) {
+                    AppSettingsStore.instance.updateDeletionStats(removed.channelType);
+                }
+            } else {
+                this.removeMessageFromMap(workingMap, messageId);
+            }
+
+            const remainingMessages = remainingToDeleteCount - processedCount;
+            const progress = ((processedCount + alreadyDeletedCount) / messageIds.length) * 100;
             
             updateStatus(
-                `Deleting messages... (${i + 1}/${messageIds.length} complete)`, 
-                progress, 
-                `ETA: ${formatTime(remainingMessages * AppSettingsStore.instance.getInterval())}`
+                `Deleting messages... (${processedCount + alreadyDeletedCount}/${messageIds.length} complete, ${skippedCount} skipped)`, 
+                progress,
+                remainingMessages > 0 ? `${formatTime(remainingMessages * AppSettingsStore.instance.getInterval())} remaining` : "Almost done"
             );
 
             await wait(AppSettingsStore.instance.getInterval());
         }
 
+        for (const messageId of alreadyDeletedMessageIds) {
+            this.removeMessageFromMap(workingMap, messageId);
+        }
         
         if (!this.isRunning) {
-            updateStatus(`Stopped (deletion incomplete)`, 0);
+            updateStatus(`Stopped (deletion incomplete)`);
             addLogEntry("Deletion process was stopped by user", "WARN");
         } else {
             const updatedJsonContent = JSON.stringify(workingMap);
@@ -262,8 +378,11 @@ export class DeletionStore {
             
             const currentStats = AppSettingsStore.instance.getDeletionStats();
             
-            addLogEntry(`Deletion complete. Total: ${currentStats.totalDeleted} messages deleted overall.`, "INFO");
-            updateStatus("Deletion complete", 1);
+            addLogEntry(`Deletion complete. ${completedCount} messages deleted this session.`, "INFO");
+            addLogEntry(`${skippedCount} messages were already deleted and skipped.`, "INFO");
+            addLogEntry(`Total: ${currentStats.totalDeleted} messages deleted overall.`, "INFO");
+            
+            updateStatus("Deletion complete", 100);
         }
         
         this.isRunning = false;

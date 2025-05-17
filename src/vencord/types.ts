@@ -1,5 +1,13 @@
-export interface MessageStoreType {
-    deleteMessage: (channelId: string, messageId: string) => Promise<void>;
+export interface RestAPIResponse {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    status: number;
+    ok: boolean;
+    text: string;
+}
+
+export interface RestAPIType {
+    del: (path: string) => Promise<RestAPIResponse>;
 }
 
 interface Channel {

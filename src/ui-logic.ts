@@ -205,6 +205,18 @@ const setupJsonFileInput = (): void => {
                 const file = currentJsonFileInput.files[0];
                 currentCustomFileButton.textContent = "Loading: " + file.name + "...";
 
+                const emptyStats = {
+                    totalDeleted: 0,
+                    deletedByChannelType: {}
+                };
+                AppSettingsStore.instance.setDeletionStats(emptyStats);
+                AppSettingsStore.instance.setJsonContent("");
+                AppSettingsStore.instance.setDeletedMessages({ messageIds: [] });
+                clearJsonRelatedDisplays("Loading new file...");
+                clearLogEntries();
+                addLogEntry("Previous data cleared for new file upload", "INFO");
+                showBanner("Clearing previous data for new file upload", "info");
+
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     try {
@@ -467,6 +479,7 @@ const setupActionButtons = (): void => {
             };
             AppSettingsStore.instance.setDeletionStats(emptyStats);
             AppSettingsStore.instance.setJsonContent("");
+            AppSettingsStore.instance.setDeletedMessages({ messageIds: [] });
             
             if (jsonPasteAreaElement) {
                 jsonPasteAreaElement.value = "";
@@ -531,11 +544,13 @@ const updateStatus = (message: string, progress?: number, eta?: string): void =>
         statusOutputElement.innerHTML = message;
     }
     
-    if (progressBarContainerElement && progressBarElement && typeof progress === 'number') {
+    if (progressBarContainerElement && progressBarElement) {
         progressBarContainerElement.style.display = 'block';
-        progressBarElement.style.width = String(Math.max(0, Math.min(100, progress))) + '%';
-    } else if (progressBarContainerElement) {
-        progressBarContainerElement.style.display = 'none';
+        const currentWidth = progressBarElement.style.width;
+        const newWidth = typeof progress === 'number' 
+            ? String(Math.max(0, Math.min(100, progress))) + '%'
+            : currentWidth;
+        progressBarElement.style.width = newWidth;
     }
     
     if (etaDisplayElement && eta) {
@@ -546,8 +561,7 @@ const updateStatus = (message: string, progress?: number, eta?: string): void =>
 
 const addLogEntry = (message: string, type: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' = 'INFO', details?: any): void => {
     if (!logContainerElement || !logOutputElement) return;
-    const timestamp = new Date().toLocaleTimeString();
-    const logMsg = "[" + timestamp + "] [" + type + "] " + message + (details ? ': ' + (typeof details === 'string' ? details : JSON.stringify(details)) : '') + '\n';
+    const logMsg = "[" + type + "] " + message + (details ? ': ' + (typeof details === 'string' ? details : JSON.stringify(details)) : '') + '\n';
     logOutputElement.textContent += logMsg;
     logOutputElement.style.display = 'block';
     logContainerElement.style.display = 'block';
