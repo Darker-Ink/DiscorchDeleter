@@ -22,14 +22,11 @@ jobs:
       - name: Check for version change in tampermonkey.config.json
         id: check-version
         run: |
-          # Get the current version from tampermonkey.config.json
           CURRENT_VERSION=$(jq -r '.version' tampermonkey.config.json)
           echo "Current version is $CURRENT_VERSION"
           
-          # Get previous tampermonkey.config.json content
-          git show HEAD~1:tampermonkey.config.json > previous_config.json || echo "Previous file not found"
-          
-          if [ -f previous_config.json ]; then
+          if git cat-file -e HEAD~1:tampermonkey.config.json 2>/dev/null; then
+            git show HEAD~1:tampermonkey.config.json > previous_config.json
             PREVIOUS_VERSION=$(jq -r '.version' previous_config.json)
             echo "Previous version was $PREVIOUS_VERSION"
             
@@ -41,16 +38,20 @@ jobs:
               echo "version_changed=false" >> $GITHUB_OUTPUT
               echo "Version unchanged"
             fi
+            rm previous_config.json # Clean up
           else
+            echo "Previous tampermonkey.config.json not found or this is the first commit with it."
+            echo "Assuming version changed for initial release."
             echo "version_changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "First release or previous file not found"
           fi
 
   build-and-release:
     needs: check-version-change
     if: needs.check-version-change.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -70,9 +71,14 @@ jobs:
       - name: Get script name
         id: script-name
         run: |
-          SCRIPT_NAME=$(ls dist/*.user.js | head -n1)
-          echo "script_path=$SCRIPT_NAME" >> $GITHUB_OUTPUT
-          echo "script_filename=$(basename $SCRIPT_NAME)" >> $GITHUB_OUTPUT
+          SCRIPT_PATH=$(ls dist/*.user.js | head -n1)
+          if [ -z "$SCRIPT_PATH" ]; then
+            echo "Error: No .user.js file found in dist/ directory."
+            exit 1
+          fi
+          echo "script_path=$SCRIPT_PATH" >> $GITHUB_OUTPUT
+          echo "script_filename=$(basename $SCRIPT_PATH)" >> $GITHUB_OUTPUT
+          echo "Found script: $SCRIPT_PATH"
 
       - name: Create Release
         id: create_release
@@ -86,4 +92,4 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
