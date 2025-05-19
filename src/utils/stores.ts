@@ -172,7 +172,15 @@ export class DeletionStore {
             return this.calculatedPermissions[channelId];
         }
 
-        const canViewChannel = Vencord.Webpack.Common.PermissionStore.can(0x400n, Vencord.Webpack.Common.ChannelStore.getChannel(channelId));
+        const channel = Vencord.Webpack.Common.ChannelStore.getChannel(channelId);
+        
+        // Always allow access to 1:1 DM channels (type 1)
+        if (channel && channel.type === 1) {
+            this.calculatedPermissions[channelId] = true;
+            return true;
+        }
+
+        const canViewChannel = Vencord.Webpack.Common.PermissionStore.can(0x400n, channel);
 
         this.calculatedPermissions[channelId] = canViewChannel;
         
