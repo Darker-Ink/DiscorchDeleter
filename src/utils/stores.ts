@@ -350,10 +350,10 @@ export class DeletionStore {
     }
 
     /**
-     * Updates the UI status with animation frame to avoid UI freezes
+     * Updates the UI status with setTimeout to avoid UI freezes and ensure background processing
      */
     private scheduleUpdateStatus(message: string, progress: number, etaMessage?: string): void {
-        requestAnimationFrame(() => updateStatus(message, progress, etaMessage));
+        setTimeout(() => updateStatus(message, progress, etaMessage), 0);
     }
 
     /**
@@ -372,8 +372,8 @@ export class DeletionStore {
         this.scheduleUpdateStatus("Calculating permissions...", 0, "Checking channel access...");
         addLogEntry("Starting permission calculations...", "INFO");
         
-        // Allow UI to update before starting heavy calculations
-        await new Promise(resolve => requestAnimationFrame(resolve));
+        // Allow UI to update before starting heavy calculations - use setTimeout instead of requestAnimationFrame
+        await new Promise(resolve => setTimeout(resolve, 0));
         
         // Get total number of channels for progress reporting
         const channelIds = Object.keys(map);
@@ -403,8 +403,8 @@ export class DeletionStore {
                 "Preparing to delete messages..."
             );
             
-            // Allow UI to update between chunks
-            await new Promise(resolve => requestAnimationFrame(resolve));
+            // Allow UI to update between chunks - use setTimeout to ensure background processing
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
         
         addLogEntry(`Finished calculating permissions for ${processedChannels} channels`, "INFO");
@@ -511,8 +511,8 @@ export class DeletionStore {
                 // Periodically save our progress
                 AppSettingsStore.instance.saveDeletedMessagesIfNeeded();
                 
-                // Allow UI to paint
-                await new Promise(resolve => requestAnimationFrame(resolve));
+                // Allow UI to paint - use setTimeout to ensure background processing
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
             
             await wait(AppSettingsStore.instance.getInterval());
