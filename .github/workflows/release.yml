@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 2
+          fetch-depth: 2 # Enough to compare HEAD and HEAD~1
 
       - name: Check for version change in tampermonkey.config.json
         id: check-version
@@ -25,7 +25,9 @@ jobs:
           CURRENT_VERSION=$(jq -r '.version' tampermonkey.config.json)
           echo "Current version is $CURRENT_VERSION"
           
+          # Check if the file existed in the previous commit
           if git cat-file -e HEAD~1:tampermonkey.config.json 2>/dev/null; then
+            # Get previous version
             git show HEAD~1:tampermonkey.config.json > previous_config.json
             PREVIOUS_VERSION=$(jq -r '.version' previous_config.json)
             echo "Previous version was $PREVIOUS_VERSION"
@@ -40,6 +42,7 @@ jobs:
             fi
             rm previous_config.json # Clean up
           else
+            # File didn't exist in previous commit or this is the first commit
             echo "Previous tampermonkey.config.json not found or this is the first commit with it."
             echo "Assuming version changed for initial release."
             echo "version_changed=true" >> $GITHUB_OUTPUT
@@ -51,12 +54,12 @@ jobs:
     if: needs.check-version-change.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Required to create releases and tags
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Fetch all history for git tags and logs
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -84,22 +87,66 @@ jobs:
           
       - name: Get commit history
         id: get-commits
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh cli needs this
         run: |
           PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
-          
           echo "Previous tag: ${PREVIOUS_TAG:-none}"
           
+          COMMIT_LOG_LINES=()
+          
           if [ -n "$PREVIOUS_TAG" ]; then
-            COMMIT_LOG=$(git log --pretty=format:"@%an [%h](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H): %s" ${PREVIOUS_TAG}..HEAD)
+            # Fetch commits since the previous tag using GitHub API
+            # jq query:
+            # .[] iterates over each commit
+            # .author.login gives GitHub username (if available, otherwise .commit.author.name)
+            # .sha | substr(0;7) gives short SHA
+            # .html_url is the commit URL
+            # .commit.message | split("\n")[0] gives the first line of the commit message
+            RAW_COMMITS_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${PREVIOUS_TAG}...HEAD" --jq '.commits')
+            
+            if [ -n "$RAW_COMMITS_JSON" ] && [ "$RAW_COMMITS_JSON" != "null" ] && [ "$RAW_COMMITS_JSON" != "[]" ]; then
+              while IFS= read -r line; do
+                COMMIT_LOG_LINES+=("$line")
+              done < <(echo "$RAW_COMMITS_JSON" | jq -r '.[] | 
+                (if .author and .author.login and (.author.login != "") then "@" + .author.login else .commit.author.name end) + 
+                " [" + (.sha | substr(0;7)) + "](" + .html_url + "): " + 
+                (.commit.message | split("\n")[0])')
+            fi
           else
-            COMMIT_LOG=$(git log --pretty=format:"@%an [%h](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H): %s" -n 10)
+            echo "No previous vX.Y.Z tag found. Fetching last 10 commits."
+            RAW_COMMITS_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/commits?per_page=10" --jq '.')
+            
+            if [ -n "$RAW_COMMITS_JSON" ] && [ "$RAW_COMMITS_JSON" != "null" ] && [ "$RAW_COMMITS_JSON" != "[]" ]; then
+              while IFS= read -r line; do
+                COMMIT_LOG_LINES+=("$line")
+              done < <(echo "$RAW_COMMITS_JSON" | jq -r '.[] | 
+                (if .author and .author.login and (.author.login != "") then "@" + .author.login else .commit.author.name end) + 
+                " [" + (.sha | substr(0;7)) + "](" + .html_url + "): " + 
+                (.commit.message | split("\n")[0])')
+            fi
           fi
           
-          COMMIT_LOG="${COMMIT_LOG//'%'/'%25'}"
-          COMMIT_LOG="${COMMIT_LOG//$'\n'/'%0A'}"
-          COMMIT_LOG="${COMMIT_LOG//$'\r'/'%0D'}"
+          COMMIT_LOG_BODY=""
+          if [ ${#COMMIT_LOG_LINES[@]} -eq 0 ]; then
+            if [ -n "$PREVIOUS_TAG" ]; then
+              COMMIT_LOG_BODY="No notable changes detected since ${PREVIOUS_TAG}."
+            else
+              COMMIT_LOG_BODY="Initial release or no commit history to display."
+            fi
+          else
+            # Join lines with newline character
+            COMMIT_LOG_BODY=$(printf "%s\n" "${COMMIT_LOG_LINES[@]}")
+            # Remove trailing newline if any (printf might add one extra)
+            COMMIT_LOG_BODY=${COMMIT_LOG_BODY%$'\n'}
+          fi
           
-          echo "commit_log=$COMMIT_LOG" >> $GITHUB_OUTPUT
+          # Escape '%' for GITHUB_OUTPUT heredoc
+          COMMIT_LOG_BODY="${COMMIT_LOG_BODY//'%'/'%25'}"
+          
+          echo "commit_log<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_LOG_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
@@ -111,16 +158,16 @@ jobs:
             # Release v${{ needs.check-version-change.outputs.new_version }}
             
             **Installation**
-            1. Install [Tampermonkey](https://www.tampermonkey.net/) extension for your browser
-            2. Install [Vencord](https://vencord.dev/download/)'s tampermonkey script
-            3. Click the "discorchdeleter.user.js" file below to install this script
+            1. Install [Violentmonkey](https://violentmonkey.github.io/) extension for your browser
+            2. Install [Vencord](https://vencord.dev/download/)'s user script
+            3. Click the "${{ steps.script-name.outputs.script_filename }}" file below to install this script
             
             **What's Changed**
             
             <details>
               <summary>Changes since last release</summary>
               
-              ${{ steps.get-commits.outputs.commit_log }}
+            ${{ steps.get-commits.outputs.commit_log }}
             </details>
           files: ${{ steps.script-name.outputs.script_path }}
           draft: false
