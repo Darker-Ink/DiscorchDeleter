@@ -12,6 +12,7 @@ let minimizeButtonElement: HTMLButtonElement | null = null;
 let jsonFileInputElement: HTMLInputElement | null = null;
 let customFileButtonElement: HTMLButtonElement | null = null;
 let jsonPasteAreaElement: HTMLTextAreaElement | null = null;
+let uiHeaderElement: HTMLDivElement | null = null;
 
 let uiBannerElement: HTMLDivElement | null = null;
 let bannerTextElement: HTMLSpanElement | null = null;
@@ -27,6 +28,13 @@ let etaDisplayElement: HTMLDivElement | null = null;
 let logContainerElement: HTMLDivElement | null = null;
 let logOutputElement: HTMLPreElement | null = null;
 let importSummaryOutputElement: HTMLDivElement | null = null;
+
+// Variables to track drag state
+let isDragging = false;
+let startDragX = 0;
+let startDragY = 0;
+let startDragLeft = 0;
+let startDragTop = 0;
 
 const formatChannelType = (type: string): string => {
     return type
@@ -140,7 +148,7 @@ const updateIntervalWarnings = (): void => {
 
     if (isNaN(value)) {
         intervalWarningElement.textContent = "Please enter a valid number.";
-        intervalWarningElement.style.display = 'block';
+        intervalWarningElement.classList.remove('d-none');
         return;
     }
 
@@ -154,11 +162,146 @@ const updateIntervalWarnings = (): void => {
 
     if (warnings.length > 0) {
         intervalWarningElement.textContent = warnings.join(" ");
-        intervalWarningElement.style.display = 'block';
+        intervalWarningElement.classList.remove('d-none');
     } else {
         intervalWarningElement.textContent = '';
-        intervalWarningElement.style.display = 'none';
+        intervalWarningElement.classList.add('d-none');
     }
+};
+
+const applyPositionAndSize = (): void => {
+    if (!uiContainerElement) return;
+    
+    // Apply position
+    const position = AppSettingsStore.instance.getPosition();
+    uiContainerElement.style.top = `${position.top}px`;
+    uiContainerElement.style.left = `${position.left}px`;
+    
+    // Apply size
+    const size = AppSettingsStore.instance.getSize();
+    uiContainerElement.style.width = `${size.width}px`;
+    
+    // Only set height if it's a specific value and not 'auto'
+    if (size.height !== 'auto') {
+        uiContainerElement.style.height = `${size.height}px`;
+    } else {
+        // Ensure we have a reasonable default height that won't shrink unexpectedly
+        uiContainerElement.style.height = '600px'; // A reasonable default height
+    }
+};
+
+const initializeDragging = (): void => {
+    if (!uiContainerElement || !uiHeaderElement) return;
+    
+    uiHeaderElement.style.cursor = 'move';
+    
+    uiHeaderElement.addEventListener('mousedown', (e) => {
+        // Only start dragging if the click is directly on the header (not on buttons)
+        if (e.target === uiHeaderElement || e.target === document.querySelector('.header-left') || e.target === document.querySelector('.header-icon') || e.target === document.querySelector('#ui-header h1')) {
+            isDragging = true;
+            startDragX = e.clientX;
+            startDragY = e.clientY;
+            startDragLeft = parseInt(uiContainerElement!.style.left || '0', 10);
+            startDragTop = parseInt(uiContainerElement!.style.top || '0', 10);
+            
+            document.body.style.userSelect = 'none'; // Prevent text selection during drag
+            e.preventDefault();
+        }
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        
+        // Calculate new position
+        const newLeft = startDragLeft + (e.clientX - startDragX);
+        const newTop = startDragTop + (e.clientY - startDragY);
+        
+        // Apply constraints (prevent dragging off screen)
+        const finalLeft = Math.max(0, Math.min(newLeft, window.innerWidth - parseInt(uiContainerElement!.style.width || '400', 10)));
+        const finalTop = Math.max(0, Math.min(newTop, window.innerHeight - 50)); // Keep at least part of UI visible
+        
+        // Apply new position
+        uiContainerElement!.style.left = `${finalLeft}px`;
+        uiContainerElement!.style.top = `${finalTop}px`;
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            document.body.style.userSelect = '';
+            
+            // Save position
+            const position = {
+                top: parseInt(uiContainerElement!.style.top || '0', 10),
+                left: parseInt(uiContainerElement!.style.left || '0', 10)
+            };
+            AppSettingsStore.instance.setPosition(position);
+        }
+    });
+};
+
+const initializeResizing = (): void => {
+    if (!uiContainerElement) return;
+    
+    // Set the UI container to be resizable
+    uiContainerElement.style.resize = 'both';
+    uiContainerElement.style.overflow = 'hidden';
+    uiContainerElement.style.minWidth = '320px';
+    uiContainerElement.style.minHeight = '200px';
+    
+    // Immediately save initial size to prevent auto-resizing on load
+    const initialWidth = uiContainerElement.offsetWidth;
+    const initialHeight = uiContainerElement.offsetHeight || 600; // Use 600px if offsetHeight is 0
+    
+    // Save this initial size to prevent changes
+    AppSettingsStore.instance.setSize({
+        width: initialWidth, 
+        height: initialHeight
+    });
+    
+    const resizeObserver = new ResizeObserver(() => {
+        if (!uiContainerElement || isDragging) return; // Don't adjust while dragging
+        
+        // Only update if not minimized
+        if (!uiContainerElement.classList.contains('minimized')) {
+            const width = uiContainerElement.offsetWidth;
+            const height = uiContainerElement.offsetHeight;
+            
+            // Save size to user settings
+            AppSettingsStore.instance.setSize({
+                width: width,
+                height: height
+            });
+            
+            // Update the content wrapper to maintain proper layout
+            const contentWrapper = uiContainerElement.querySelector('.ui-content-wrapper') as HTMLElement;
+            if (contentWrapper) {
+                contentWrapper.style.maxHeight = `calc(${height}px - 96px)`;
+            }
+        }
+    });
+    
+    resizeObserver.observe(uiContainerElement);
+    
+    // Handle minimized state specifically
+    const updateResizeState = () => {
+        if (!uiContainerElement) return;
+        
+        if (uiContainerElement.classList.contains('minimized')) {
+            uiContainerElement.style.resize = 'none';
+        } else {
+            uiContainerElement.style.resize = 'both';
+        }
+    };
+    
+    if (minimizeButtonElement) {
+        minimizeButtonElement.addEventListener('click', () => {
+            setTimeout(updateResizeState, 0);
+        });
+    }
+    
+    // Initial update
+    updateResizeState();
 };
 
 const setupMinimizeButton = (initialMinimizedState: boolean): void => {
@@ -171,6 +314,21 @@ const setupMinimizeButton = (initialMinimizedState: boolean): void => {
             const currentlyMinimized = AppSettingsStore.instance.toggleMinimized();
             currentUiContainer.classList.toggle("minimized", currentlyMinimized);
             currentMinimizeButton.innerHTML = currentlyMinimized ? PLUS_ICON_SVG : MINUS_ICON_SVG;
+            
+            // Force proper height on state change
+            if (currentlyMinimized) {
+                currentUiContainer.style.height = '48px';
+                currentUiContainer.style.minHeight = ''; // Unset the minHeight
+            } else {
+                // Restore previous height or default
+                const size = AppSettingsStore.instance.getSize();
+                if (size.height !== 'auto') {
+                    currentUiContainer.style.height = `${size.height}px`;
+                } else {
+                    currentUiContainer.style.height = 'auto';
+                }
+                currentUiContainer.style.minHeight = '200px'; // Restore minHeight
+            }
         });
     }
 };
@@ -211,7 +369,7 @@ const setupJsonFileInput = (): void => {
                 };
                 AppSettingsStore.instance.setDeletionStats(emptyStats);
                 AppSettingsStore.instance.setJsonContent("");
-                AppSettingsStore.instance.setDeletedMessages({ messageIds: [] });
+                AppSettingsStore.instance.resetDeletedMessagesSet();
                 clearJsonRelatedDisplays("Loading new file...");
                 clearLogEntries();
                 addLogEntry("Previous data cleared for new file upload", "INFO");
@@ -244,9 +402,9 @@ const setupJsonFileInput = (): void => {
                         if (etaDisplayElement) {
                             if (statusInfo.totalMessages > 0) {
                                 etaDisplayElement.textContent = "Initial Est. Time: " + statusInfo.etaString;
-                                etaDisplayElement.style.display = 'block';
+                                etaDisplayElement.classList.remove('d-none');
                             } else {
-                                etaDisplayElement.style.display = 'none';
+                                etaDisplayElement.classList.add('d-none');
                             }
                         }
 
@@ -277,7 +435,7 @@ const setupJsonFileInput = (): void => {
                         currentJsonFileInput.value = "";
                         if (importSummaryOutputElement) importSummaryOutputElement.innerHTML = "";
                         if (statusOutputElement) statusOutputElement.textContent = "Error loading file.";
-                        if (etaDisplayElement) etaDisplayElement.style.display = 'none';
+                        if (etaDisplayElement) etaDisplayElement.classList.add('d-none');
                         setTimeout(() => {
                             if (currentCustomFileButton.textContent === "Validation Failed!") {
                                 currentCustomFileButton.textContent = "Choose File";
@@ -294,7 +452,7 @@ const setupJsonFileInput = (): void => {
                     currentJsonFileInput.value = "";
                     if (importSummaryOutputElement) importSummaryOutputElement.innerHTML = "";
                     if (statusOutputElement) statusOutputElement.textContent = "Error loading file.";
-                    if (etaDisplayElement) etaDisplayElement.style.display = 'none';
+                    if (etaDisplayElement) etaDisplayElement.classList.add('d-none');
                     setTimeout(() => {
                         if (currentCustomFileButton.textContent === "Error reading file.") {
                             currentCustomFileButton.textContent = "Choose File";
@@ -361,9 +519,9 @@ const setupJsonPasteArea = (): void => {
                             if (etaDisplayElement) {
                                 if (statusInfo.totalMessages > 0) {
                                     etaDisplayElement.textContent = "Initial Est. Time: " + statusInfo.etaString;
-                                    etaDisplayElement.style.display = 'block';
+                                    etaDisplayElement.classList.remove('d-none');
                                 } else {
-                                    etaDisplayElement.style.display = 'none';
+                                    etaDisplayElement.classList.add('d-none');
                                 }
                             }
                             if (statusOutputElement) {
@@ -378,7 +536,7 @@ const setupJsonPasteArea = (): void => {
                         currentCustomFileButton.textContent = "Pasted (not JSON)";
                         if (importSummaryOutputElement) importSummaryOutputElement.innerHTML = "";
                         if (statusOutputElement) statusOutputElement.textContent = "Error processing pasted JSON.";
-                        if (etaDisplayElement) etaDisplayElement.style.display = 'none';
+                        if (etaDisplayElement) etaDisplayElement.classList.add('d-none');
                         clearJsonRelatedDisplays("Error: Pasted content is not valid JSON.");
                     }
                 }
@@ -479,7 +637,7 @@ const setupActionButtons = (): void => {
             };
             AppSettingsStore.instance.setDeletionStats(emptyStats);
             AppSettingsStore.instance.setJsonContent("");
-            AppSettingsStore.instance.setDeletedMessages({ messageIds: [] });
+            AppSettingsStore.instance.resetDeletedMessagesSet();
             
             if (jsonPasteAreaElement) {
                 jsonPasteAreaElement.value = "";
@@ -532,11 +690,15 @@ const showBanner = (message: string, type: 'info' | 'warning' | 'error' = 'info'
     if (type === 'info') uiBannerElement.classList.add('info-banner');
     else if (type === 'warning') uiBannerElement.classList.add('warning-banner');
     else if (type === 'error') uiBannerElement.classList.add('error-banner');
-    uiBannerElement.style.display = 'flex';
+    uiBannerElement.classList.remove('d-none');
+    uiBannerElement.classList.add('d-flex');
 };
 
 const hideBanner = (): void => {
-    if (uiBannerElement) uiBannerElement.style.display = 'none';
+    if (uiBannerElement) {
+        uiBannerElement.classList.add('d-none');
+        uiBannerElement.classList.remove('d-flex');
+    }
 };
 
 const updateStatus = (message: string, progress?: number, eta?: string): void => {
@@ -545,7 +707,7 @@ const updateStatus = (message: string, progress?: number, eta?: string): void =>
     }
     
     if (progressBarContainerElement && progressBarElement) {
-        progressBarContainerElement.style.display = 'block';
+        progressBarContainerElement.classList.remove('d-none');
         const currentWidth = progressBarElement.style.width;
         const newWidth = typeof progress === 'number' 
             ? String(Math.max(0, Math.min(100, progress))) + '%'
@@ -555,7 +717,7 @@ const updateStatus = (message: string, progress?: number, eta?: string): void =>
     
     if (etaDisplayElement && eta) {
         etaDisplayElement.textContent = "Current ETA: " + eta;
-        etaDisplayElement.style.display = 'block';
+        etaDisplayElement.classList.remove('d-none');
     }
 };
 
@@ -563,32 +725,36 @@ const addLogEntry = (message: string, type: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' 
     if (!logContainerElement || !logOutputElement) return;
     const logMsg = "[" + type + "] " + message + (details ? ': ' + (typeof details === 'string' ? details : JSON.stringify(details)) : '') + '\n';
     logOutputElement.textContent += logMsg;
-    logOutputElement.style.display = 'block';
-    logContainerElement.style.display = 'block';
+    
+    logOutputElement.classList.remove('d-none');
+    logContainerElement.classList.remove('d-none');
+    
     logOutputElement.scrollTop = logOutputElement.scrollHeight;
 };
 
 const clearLogEntries = (): void => {
     if (logOutputElement) {
         logOutputElement.textContent = '';
-        logOutputElement.style.display = 'none';
+        logOutputElement.classList.add('d-none');
     }
-    if (logContainerElement) logContainerElement.style.display = 'none';
+    if (logContainerElement) logContainerElement.classList.add('d-none');
 };
 
 const toggleInputMethod = (method: 'file' | 'paste'): void => {
     if (!fileInputSectionElement || !pasteInputSectionElement || !showFileUploadButtonElement || !showJsonPasteButtonElement) return;
+    
     if (method === 'file') {
-        fileInputSectionElement.style.display = 'block';
-        pasteInputSectionElement.style.display = 'none';
+        fileInputSectionElement.classList.remove('d-none');
+        pasteInputSectionElement.classList.add('d-none');
         showFileUploadButtonElement.classList.add('active');
         showJsonPasteButtonElement.classList.remove('active');
     } else {
-        fileInputSectionElement.style.display = 'none';
-        pasteInputSectionElement.style.display = 'block';
+        fileInputSectionElement.classList.add('d-none');
+        pasteInputSectionElement.classList.remove('d-none');
         showFileUploadButtonElement.classList.remove('active');
         showJsonPasteButtonElement.classList.add('active');
     }
+    
     AppSettingsStore.instance.setInputMethod(method);
 };
 
@@ -604,9 +770,9 @@ const updateDisplaysFromStatusInfo = (statusInfo: { channelListHtml: string, tot
     if (etaDisplayElement) {
         if (statusInfo.totalMessages > 0) {
             etaDisplayElement.textContent = "Initial Est. Time: " + statusInfo.etaString;
-            etaDisplayElement.style.display = 'block';
+            etaDisplayElement.classList.remove('d-none');
         } else {
-            etaDisplayElement.style.display = 'none';
+            etaDisplayElement.classList.add('d-none');
         }
     }
 
@@ -625,7 +791,7 @@ const updateDisplaysFromStatusInfo = (statusInfo: { channelListHtml: string, tot
 const clearJsonRelatedDisplays = (defaultStatusText: string = "Idle. Ready to begin."): void => {
     if (importSummaryOutputElement) importSummaryOutputElement.innerHTML = "";
     if (statusOutputElement) statusOutputElement.textContent = defaultStatusText;
-    if (etaDisplayElement) etaDisplayElement.style.display = 'none';
+    if (etaDisplayElement) etaDisplayElement.classList.add('d-none');
 };
 
 export const initializeUIInteractions = (container: HTMLDivElement, _initialMinimizedStateFromIndex: boolean): void => {
@@ -636,6 +802,7 @@ export const initializeUIInteractions = (container: HTMLDivElement, _initialMini
     jsonFileInputElement = document.getElementById("jsonFile") as HTMLInputElement;
     customFileButtonElement = document.getElementById("customFileButton") as HTMLButtonElement;
     jsonPasteAreaElement = document.getElementById("jsonPaste") as HTMLTextAreaElement;
+    uiHeaderElement = document.getElementById("ui-header") as HTMLDivElement;
 
     uiBannerElement = document.getElementById("ui-banner") as HTMLDivElement;
     bannerTextElement = uiBannerElement?.querySelector(".banner-text") as HTMLSpanElement;
@@ -652,28 +819,16 @@ export const initializeUIInteractions = (container: HTMLDivElement, _initialMini
     logOutputElement = document.getElementById("logOutput") as HTMLPreElement;
     importSummaryOutputElement = document.getElementById("importSummaryOutput") as HTMLDivElement;
 
-    const styleElement = document.createElement('style');
-    styleElement.textContent = `
-        #importSummaryOutput ul {
-            list-style-type: disc !important;
-            margin-top: 5px !important;
-            margin-bottom: 5px !important;
-            margin-left: 0px !important;
-            padding-left: 25px !important;
-        }
-        #importSummaryOutput li {
-            list-style-type: disc !important;
-            margin-bottom: 3px !important;
-        }
-    `;
-    document.head.appendChild(styleElement);
-
     const actualInitialMinimizedState = AppSettingsStore.instance.isMinimized();
     if (uiContainerElement) {
         uiContainerElement.classList.toggle("minimized", actualInitialMinimizedState);
     }
 
-    if (bannerCloseButtonElement) bannerCloseButtonElement.addEventListener('click', hideBanner);
+    if (bannerCloseButtonElement) {
+        bannerCloseButtonElement.addEventListener('click', () => {
+            hideBanner();
+        });
+    }
 
     setupInputMethodToggle();
     if (minimizeButtonElement && uiContainerElement) setupMinimizeButton(actualInitialMinimizedState);
@@ -683,7 +838,20 @@ export const initializeUIInteractions = (container: HTMLDivElement, _initialMini
     if (customFileButtonElement && jsonFileInputElement && jsonPasteAreaElement) setupJsonFileInput();
     if (jsonPasteAreaElement && customFileButtonElement && jsonFileInputElement) setupJsonPasteArea();
     
+    // Initialize position, dragging, and resizing
+    applyPositionAndSize();
+    initializeDragging();
+    initializeResizing();
+    
     initializeUIWithSavedData();
+
+    // Apply display classes to initial UI elements
+    if (intervalWarningElement) intervalWarningElement.classList.add('d-none');
+    if (uiBannerElement) uiBannerElement.classList.add('d-none');
+    if (progressBarContainerElement) progressBarContainerElement.classList.add('d-none');
+    if (etaDisplayElement) etaDisplayElement.classList.add('d-none');
+    if (logContainerElement) logContainerElement.classList.add('d-none');
+    if (logOutputElement) logOutputElement.classList.add('d-none');
 };
 
 const initializeUIWithSavedData = (): void => {
