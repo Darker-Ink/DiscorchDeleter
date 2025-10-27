@@ -41,7 +41,6 @@ export interface DeletedMessages {
 
 export class AppSettingsStore {
     private static _instance: AppSettingsStore;
-    // Cache for frequently accessed values
     private _deletedMessagesSet: Set<string> | null = null;
     private _deletionStats: DeletionStats | null = null;
 
@@ -122,7 +121,6 @@ export class AppSettingsStore {
 
     public getDeletedMessagesSet(): Set<string> {
         if (!this._deletedMessagesSet) {
-            // Convert array to Set for O(1) lookups
             const stored = this.getValue<{messageIds: string[]}>(DELETEION_PROGRESS_KEY, {
                 messageIds: []
             });
@@ -136,7 +134,6 @@ export class AppSettingsStore {
         this.setValue(DELETEION_PROGRESS_KEY, { messageIds: [] });
     }
 
-    // Efficiently handle saving deleted messages
     private _pendingSaveTimeout: number | null = null;
     private _hasChanges = false;
     
@@ -160,7 +157,6 @@ export class AppSettingsStore {
             set.add(messageId);
             this._hasChanges = true;
             
-            // Schedule saving after a delay to batch multiple operations
             if (this._pendingSaveTimeout === null) {
                 this._pendingSaveTimeout = window.setTimeout(() => {
                     this.saveDeletedMessagesIfNeeded();
@@ -171,7 +167,7 @@ export class AppSettingsStore {
     }
 
     public isMessageDeleted(messageId: string): boolean {
-        return this.getDeletedMessagesSet().has(messageId); // O(1) lookup
+        return this.getDeletedMessagesSet().has(messageId);
     }
 
     public getPosition(): { top: number; left: number } {
@@ -206,7 +202,6 @@ export class AppSettingsStore {
         GM_deleteValue(POSITION_KEY);
         GM_deleteValue(SIZE_KEY);
         
-        // Clear caches
         this._deletedMessagesSet = null;
         this._deletionStats = null;
     }
@@ -241,7 +236,6 @@ export class DeletionStore {
 
         const channel = Vencord.Webpack.Common.ChannelStore.getChannel(channelId);
         
-        // Always allow access to 1:1 DM channels (type 1)
         if (channel && channel.type === 1) {
             this.calculatedPermissions[channelId] = true;
             return true;
@@ -268,7 +262,6 @@ export class DeletionStore {
      * @returns Information about the removed message (channel ID and type) or null if not found
      */
     private removeMessageFromMap(map: ChannelMap, messageId: string): { channelId: string, channelType: string } | null {
-        // Use the cached map for O(1) lookup if available
         if (this.messageToChannelMap && this.messageToChannelMap.has(messageId)) {
             const channelId = this.messageToChannelMap.get(messageId)!;
             if (map[channelId]) {
@@ -283,7 +276,6 @@ export class DeletionStore {
             return null;
         }
         
-        // Fallback to linear search if map not available
         for (const [channelId, channel] of Object.entries(map)) {
             const index = channel.messageIds.indexOf(messageId);
             if (index !== -1) {
@@ -302,7 +294,6 @@ export class DeletionStore {
             this.isRunning = false;
             addLogEntry("Deletion process stopped", "WARN");
             
-            // Save any pending changes
             AppSettingsStore.instance.saveDeletedMessagesIfNeeded();
         }
     }
@@ -368,34 +359,28 @@ export class DeletionStore {
         
         this.isRunning = true;
 
-        // First, calculate channel permissions
         this.scheduleUpdateStatus("Calculating permissions...", 0, "Checking channel access...");
         addLogEntry("Starting permission calculations...", "INFO");
         
-        // Allow UI to update before starting heavy calculations - use setTimeout instead of requestAnimationFrame
         await new Promise(resolve => setTimeout(resolve, 0));
         
-        // Get total number of channels for progress reporting
         const channelIds = Object.keys(map);
         const channelCount = channelIds.length;
         let processedChannels = 0;
         
-        // Process permissions in chunks to avoid freezing the UI
         const permissions: { [channelId: string]: boolean } = {};
-        const CHUNK_SIZE = 100; // Process 100 channels at a time
+        const CHUNK_SIZE = 100;
         
         for (let i = 0; i < channelIds.length; i += CHUNK_SIZE) {
             if (!this.isRunning) break;
             
             const chunk = channelIds.slice(i, i + CHUNK_SIZE);
             
-            // Process this chunk of channels
             for (const channelId of chunk) {
                 permissions[channelId] = this.calculatePermission(channelId);
                 processedChannels++;
             }
             
-            // Update progress for permission phase
             const permissionProgress = (processedChannels / channelCount) * 100;
             this.scheduleUpdateStatus(
                 `Calculating permissions... (${processedChannels}/${channelCount} channels)`, 
@@ -403,17 +388,13 @@ export class DeletionStore {
                 "Preparing to delete messages..."
             );
             
-            // Allow UI to update between chunks - use setTimeout to ensure background processing
             await new Promise(resolve => setTimeout(resolve, 0));
         }
         
         addLogEntry(`Finished calculating permissions for ${processedChannels} channels`, "INFO");
         
-        // Build a lookup map from messageId to channelId for faster operations
-        // Only create it when we need it
         this.messageToChannelMap = new Map();
         
-        // Track inaccessible channels
         for (const [channelId, canAccess] of Object.entries(permissions)) {
             if (!canAccess && map[channelId]) {
                 const found = map[channelId];
@@ -421,7 +402,6 @@ export class DeletionStore {
             }
         }
         
-        // Collect all messages from accessible channels
         const messageToProcess: {id: string, channelId: string}[] = [];
         const deletedMessagesSet = AppSettingsStore.instance.getDeletedMessagesSet();
         let totalMessageCount = 0;
@@ -431,12 +411,10 @@ export class DeletionStore {
                 for (const messageId of map[channelId].messageIds) {
                     totalMessageCount++;
                     
-                    // Only add messages that aren't already deleted
                     if (!deletedMessagesSet.has(messageId)) {
                         messageToProcess.push({id: messageId, channelId});
                     }
                     
-                    // Add to lookup map for future use
                     this.messageToChannelMap.set(messageId, channelId);
                 }
             }
@@ -457,7 +435,6 @@ export class DeletionStore {
 
         const etaTime = remainingToDeleteCount * AppSettingsStore.instance.getInterval();
 
-        // Calculate initial progress percentage based on already deleted messages
         const initialProgress = totalMessageCount > 0 ? (alreadyDeletedCount / totalMessageCount) * 100 : 0;
         this.scheduleUpdateStatus(
             `Deleting messages... (${alreadyDeletedCount}/${totalMessageCount} complete)`, 
@@ -468,12 +445,10 @@ export class DeletionStore {
         let completedCount = 0;
         let processedCount = 0;
         let lastUIUpdateTime = performance.now();
-        const UI_UPDATE_INTERVAL = 500;  // Update UI every 500ms
+        const UI_UPDATE_INTERVAL = 500;
         
-        // Create a working copy of the map that we'll modify as we go
         const workingMap = JSON.parse(JSON.stringify(map)) as ChannelMap;
         
-        // Process each message sequentially to respect rate limits
         for (const {id: messageId, channelId} of messageToProcess) {
             if (!this.isRunning) break;
             
@@ -493,7 +468,6 @@ export class DeletionStore {
                 this.removeMessageFromMap(workingMap, messageId);
             }
             
-            // Only update UI periodically to avoid performance issues
             const currentTime = performance.now();
             if (currentTime - lastUIUpdateTime > UI_UPDATE_INTERVAL) {
                 const remainingMessages = remainingToDeleteCount - processedCount;
@@ -508,24 +482,20 @@ export class DeletionStore {
                 
                 lastUIUpdateTime = currentTime;
                 
-                // Periodically save our progress
                 AppSettingsStore.instance.saveDeletedMessagesIfNeeded();
                 
-                // Allow UI to paint - use setTimeout to ensure background processing
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
             
             await wait(AppSettingsStore.instance.getInterval());
         }
 
-        // Clean up workingMap by removing already deleted messages
         if (this.isRunning) {
             for (const messageId of deletedMessagesSet) {
                 this.removeMessageFromMap(workingMap, messageId);
             }
         }
         
-        // Save any pending changes
         AppSettingsStore.instance.saveDeletedMessagesIfNeeded();
         
         if (!this.isRunning) {
@@ -545,6 +515,6 @@ export class DeletionStore {
         }
         
         this.isRunning = false;
-        this.messageToChannelMap = null; // Free memory
+        this.messageToChannelMap = null;
     }
 }

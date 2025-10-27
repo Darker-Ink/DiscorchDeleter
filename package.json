@@ -1,6 +1,6 @@
 {
   "name": "discorch-deleter",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A script to delete all messages provided from Discorch",
   "main": "dist/script.user.js",
   "type": "module",
